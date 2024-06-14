@@ -252,13 +252,29 @@ As a consequence developers sometimes find it valuable to offload some of the wo
 To illustrate this, we'll start by creating a stat that calculates the convex hull of a set of points, using the `chull()` function included in `grDevices`.
 As you might expect, most of the work is done by a new ggproto object that we will create:
 
+We can define the computation first which can make debugging easier if needed. 
+
 ```{r}
-StatChull <- ggproto("StatChull", Stat,
-  compute_group = function(data, scales) {
-    data[chull(data$x, data$y), , drop = FALSE]
-  },
+compute_group_chull <- function(data){
+
+    chull_rows <- chull(data$x, data$y)
+
+    data[chull_rows, , drop = FALSE]
+
+  }
+```
+
+Then, we'll use this group computation to define a StatChull.
+
+```{r}
+StatChull <- ggproto(
+  `_class` = "StatChull", 
+  `_inherit` = Stat,
+  compute_group = function(data, scales){ 
+      compute_group_chull(data) 
+    } ,
   required_aes = c("x", "y")
-)
+ )
 ```
 
 As described in @sec-ggproto the first two arguments to `ggproto()` are used to indicate that this object defines a new class (conveniently named `"StatChull"`) which inherits fields and methods from the `Stat` object.
@@ -266,8 +282,20 @@ We then specify only those fields and methods that need to be altered from the d
 Our `compute_group()` function takes two inputs, `data` and `scales`---because this is what ggplot2 expects---but the actual computation is dependent only on the `data`.
 Note that because the computation necessarily requires both position aesthetics to be present, we have also specified the `required_aes` field to make sure that ggplot2 knows that these aesthetics are required.
 
-By creating this ggproto object we have a working stat, but have not yet given the user a way to access it.
+And we use StatChull to produce a ggplot using the layer function.
+
+```{r}
+#| layout-ncol: 2
+#| fig-width: 4
+ggplot(mpg, aes(displ, hwy)) + 
+  geom_point() + 
+  layer(geom = "polygon", stat = StatChull, position = "identity")
+```
+
+
+But we have not given the user a familiar and concise way to use it - users typically don't use layer directly.
 To address this we write a layer function, `stat_chull()`.
+
 All layer functions have the same form: you specify defaults in the function arguments and then call `layer()`, sending `...` into the `params` argument.
 The arguments in `...` will either be arguments for the geom (if you're making a stat wrapper), arguments for the stat (if you're making a geom wrapper), or aesthetics to be set.
 `layer()` takes care of teasing the different parameters apart and making sure they're stored in the right place.
